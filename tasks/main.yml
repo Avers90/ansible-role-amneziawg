@@ -10,7 +10,7 @@
       - software-properties-common
       - python3-launchpadlib
       - gnupg2
-      - linux-headers-{{ ansible_kernel }}
+      - "linux-headers-{{ ansible_facts['kernel'] }}"
     state: present
     update_cache: true
 
@@ -48,6 +48,14 @@
       - amneziawg
     state: present
     update_cache: true
+
+- name: amneziawg | Ensure /etc/wireguard directory exists
+  ansible.builtin.file:
+    path: /etc/wireguard
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
 
 - name: amneziawg | Check if AmneziaWG config exists
   ansible.builtin.stat:
