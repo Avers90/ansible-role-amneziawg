@@ -1,0 +1,46 @@
+---
+## AmneziaWG interface name
+amneziawg_interface: "awg0"
+
+## Server address in CIDR notation
+amneziawg_address: "10.0.0.1/24"
+
+## Listen port
+amneziawg_port: 51820
+
+## Private key (leave empty to auto-generate)
+amneziawg_private_key: ""
+
+## DNS for clients (usually AdGuard Home on AWG IP)
+amneziawg_dns: "{{ amneziawg_address | ansible.utils.ipaddr('address') }}"
+
+## Enable IP forwarding
+amneziawg_ip_forward: true
+
+## Force config deployment even if peers exist
+amneziawg_force_config: false
+
+## AmneziaWG obfuscation parameters
+## All parameters (except Jc/Jmin/Jmax) must match between server and client
+## See: https://github.com/amnezia-vpn/amneziawg-linux-kernel-module#configuration
+
+## Jc — number of junk packets (1–128); recommended: 4–12
+amneziawg_jc: 4
+
+## Jmin — min junk packet size in bytes (< Jmax < 1280); recommended: 8
+amneziawg_jmin: 8
+
+## Jmax — max junk packet size in bytes (> Jmin, ≤ 1280); recommended: 80
+amneziawg_jmax: 80
+
+## S1 — init handshake junk size (≤ 1132, S1+56 ≠ S2); recommended: 15–150
+amneziawg_s1: 30
+
+## S2 — response handshake junk size (≤ 1188); recommended: 15–150
+amneziawg_s2: 40
+
+## H1–H4 — magic header values (must be unique, range: 5–2147483647)
+amneziawg_h1: 1234567891
+amneziawg_h2: 1234567892
+amneziawg_h3: 1234567893
+amneziawg_h4: 1234567894

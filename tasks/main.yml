@@ -1,0 +1,180 @@
+---
+- name: amneziawg | Fail if distro is not supported
+  ansible.builtin.fail:
+    msg: "Distribution '{{ ansible_facts['distribution'] }}' is not supported. Supported: Debian, Ubuntu"
+  when: ansible_facts['distribution'] not in ['Debian', 'Ubuntu']
+
+- name: amneziawg | Install prerequisites for PPA
+  ansible.builtin.apt:
+    name:
+      - software-properties-common
+      - python3-launchpadlib
+      - gnupg2
+      - linux-headers-{{ ansible_kernel }}
+    state: present
+    update_cache: true
+
+- name: amneziawg | Add AmneziaWG GPG key (Debian)
+  ansible.builtin.apt_key:
+    keyserver: keyserver.ubuntu.com
+    id: "57290828"
+    state: present
+  when: ansible_facts['distribution'] == 'Debian'
+
+- name: amneziawg | Add AmneziaWG PPA repository (Debian)
+  ansible.builtin.apt_repository:
+    repo: "deb https://ppa.launchpadcontent.net/amnezia/ppa/ubuntu focal main"
+    filename: amnezia
+    state: present
+  when: ansible_facts['distribution'] == 'Debian'
+
+- name: amneziawg | Add AmneziaWG deb-src repository (Debian)
+  ansible.builtin.apt_repository:
+    repo: "deb-src https://ppa.launchpadcontent.net/amnezia/ppa/ubuntu focal main"
+    filename: amnezia-src
+    state: present
+  when: ansible_facts['distribution'] == 'Debian'
+
+- name: amneziawg | Add AmneziaWG PPA repository (Ubuntu)
+  ansible.builtin.apt_repository:
+    repo: "ppa:amnezia/ppa"
+    state: present
+    update_cache: false
+  when: ansible_facts['distribution'] == 'Ubuntu'
+
+- name: amneziawg | Install AmneziaWG packages
+  ansible.builtin.apt:
+    name:
+      - amneziawg
+    state: present
+    update_cache: true
+
+- name: amneziawg | Check if AmneziaWG config exists
+  ansible.builtin.stat:
+    path: "/etc/wireguard/{{ amneziawg_interface }}.conf"
+  register: awg_config_file
+
+- name: amneziawg | Check if config has peers
+  ansible.builtin.shell: grep -c '^\[Peer\]' /etc/wireguard/{{ amneziawg_interface }}.conf || echo 0
+  register: awg_peers_count
+  changed_when: false
+  when: awg_config_file.stat.exists
+
+- name: amneziawg | Set peers exist fact
+  ansible.builtin.set_fact:
+    amneziawg_peers_exist: "{{ awg_config_file.stat.exists and (awg_peers_count.stdout | default('0') | int > 0) }}"
+
+- name: amneziawg | Display peers status
+  ansible.builtin.debug:
+    msg: "AmneziaWG config has {{ awg_peers_count.stdout | default('0') }} peer(s). Config will {{ 'NOT be modified' if (amneziawg_peers_exist and not amneziawg_force_config) else 'be deployed' }}."
+
+- name: amneziawg | Check if private key exists
+  ansible.builtin.stat:
+    path: "/etc/wireguard/{{ amneziawg_interface }}_privatekey"
+  register: privatekey_file
+
+- name: amneziawg | Generate private key
+  ansible.builtin.shell: awg genkey
+  register: generated_private_key
+  when: amneziawg_private_key == "" and not privatekey_file.stat.exists
+  no_log: true
+
+- name: amneziawg | Save private key to file
+  ansible.builtin.copy:
+    content: "{{ generated_private_key.stdout }}"
+    dest: "/etc/wireguard/{{ amneziawg_interface }}_privatekey"
+    owner: root
+    group: root
+    mode: "0600"
+  when: amneziawg_private_key == "" and not privatekey_file.stat.exists
+  no_log: true
+
+- name: amneziawg | Read existing private key
+  ansible.builtin.slurp:
+    src: "/etc/wireguard/{{ amneziawg_interface }}_privatekey"
+  register: existing_private_key
+  when: privatekey_file.stat.exists
+  no_log: true
+
+- name: amneziawg | Set private key fact (generated)
+  ansible.builtin.set_fact:
+    amneziawg_private_key_actual: "{{ generated_private_key.stdout }}"
+  when: amneziawg_private_key == "" and not privatekey_file.stat.exists
+  no_log: true
+
+- name: amneziawg | Set private key fact (existing)
+  ansible.builtin.set_fact:
+    amneziawg_private_key_actual: "{{ existing_private_key.content | b64decode | trim }}"
+  when: privatekey_file.stat.exists
+  no_log: true
+
+- name: amneziawg | Set private key fact (provided)
+  ansible.builtin.set_fact:
+    amneziawg_private_key_actual: "{{ amneziawg_private_key }}"
+  when: amneziawg_private_key != ""
+  no_log: true
+
+- name: amneziawg | Generate public key
+  ansible.builtin.shell: echo "{{ amneziawg_private_key_actual }}" | awg pubkey
+  register: public_key
+  changed_when: false
+  no_log: true
+
+- name: amneziawg | Save public key to file
+  ansible.builtin.copy:
+    content: "{{ public_key.stdout }}"
+    dest: "/etc/wireguard/{{ amneziawg_interface }}_publickey"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: amneziawg | Display public key
+  ansible.builtin.debug:
+    msg: "AmneziaWG public key: {{ public_key.stdout }}"
+
+- name: amneziawg | Enable IP forwarding
+  ansible.posix.sysctl:
+    name: net.ipv4.ip_forward
+    value: "1"
+    state: present
+    reload: true
+  when: amneziawg_ip_forward | bool
+
+- name: amneziawg | Deploy AmneziaWG configuration
+  ansible.builtin.template:
+    src: awg.conf.j2
+    dest: "/etc/wireguard/{{ amneziawg_interface }}.conf"
+    owner: root
+    group: root
+    mode: "0600"
+  notify: Restart AmneziaWG
+  when: not amneziawg_peers_exist or amneziawg_force_config
+
+- name: amneziawg | Skip config deployment (peers exist)
+  ansible.builtin.debug:
+    msg: "Skipping config deployment - {{ awg_peers_count.stdout }} peer(s) found. Manage peers via WGDashboard."
+  when: amneziawg_peers_exist and not amneziawg_force_config
+
+- name: amneziawg | Enable and start AmneziaWG
+  ansible.builtin.systemd:
+    name: "awg-quick@{{ amneziawg_interface }}"
+    enabled: true
+    state: started
+
+- name: amneziawg | Display completion message
+  ansible.builtin.debug:
+    msg: |
+      AmneziaWG installed successfully!
+
+      Interface: {{ amneziawg_interface }}
+      Address: {{ amneziawg_address }}
+      Port: {{ amneziawg_port }}
+      Public Key: {{ public_key.stdout }}
+
+      Obfuscation params:
+        Jc={{ amneziawg_jc }}, Jmin={{ amneziawg_jmin }}, Jmax={{ amneziawg_jmax }}
+        S1={{ amneziawg_s1 }}, S2={{ amneziawg_s2 }}
+        H1={{ amneziawg_h1 }}, H2={{ amneziawg_h2 }}, H3={{ amneziawg_h3 }}, H4={{ amneziawg_h4 }}
+
+      NOTE: iptables/NAT rules are managed by ansible-role-firewall.
+      Run firewall role to complete the setup.

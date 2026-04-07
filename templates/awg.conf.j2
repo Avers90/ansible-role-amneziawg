@@ -1,0 +1,17 @@
+## {{ ansible_managed }}
+[Interface]
+Address = {{ amneziawg_address }}
+ListenPort = {{ amneziawg_port }}
+PrivateKey = {{ amneziawg_private_key_actual }}
+Jc = {{ amneziawg_jc }}
+Jmin = {{ amneziawg_jmin }}
+Jmax = {{ amneziawg_jmax }}
+S1 = {{ amneziawg_s1 }}
+S2 = {{ amneziawg_s2 }}
+H1 = {{ amneziawg_h1 }}
+H2 = {{ amneziawg_h2 }}
+H3 = {{ amneziawg_h3 }}
+H4 = {{ amneziawg_h4 }}
+
+## NAT/iptables rules are managed by ansible-role-firewall
+## Do not add PostUp/PostDown here
