@@ -2,6 +2,9 @@
 ## AmneziaWG interface name
 amneziawg_interface: "awg0"
 
+## Config directory (awg-quick reads from here, NOT /etc/wireguard)
+amneziawg_config_dir: "/etc/amnezia/amneziawg"
+
 ## Server address in CIDR notation
 amneziawg_address: "10.0.0.1/24"
 
