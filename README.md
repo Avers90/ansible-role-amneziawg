@@ -88,11 +88,6 @@ amneziawg_h4: 1234567894
 - Default: `false` — packages are installed only if missing (`state: present`)
 - When `true`: `state: latest` — upgrades `amneziawg-dkms` + `amneziawg-tools` via apt, DKMS rebuilds the kernel module
 
-```bash
-# Update via Makefile
-make update-amneziawg HOST=<hostname>
-```
-
 ## Installation details
 
 - **Ubuntu**: adds PPA `ppa:amnezia/ppa`, installs `amneziawg` package
