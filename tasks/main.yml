@@ -46,7 +46,7 @@
   ansible.builtin.apt:
     name:
       - amneziawg
-    state: present
+    state: "{{ 'latest' if amneziawg_update | bool else 'present' }}"
     update_cache: true
 
 - name: amneziawg | Ensure config directory exists

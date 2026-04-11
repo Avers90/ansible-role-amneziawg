@@ -23,6 +23,11 @@ amneziawg_ip_forward: true
 ## Force config deployment even if peers exist
 amneziawg_force_config: false
 
+## Update amneziawg packages to latest version from PPA
+## Default: false (state: present — install only if missing)
+## Set to true to upgrade: state: latest
+amneziawg_update: false
+
 ## AmneziaWG obfuscation parameters
 ## All parameters (except Jc/Jmin/Jmax) must match between server and client
 ## See: https://github.com/amnezia-vpn/amneziawg-linux-kernel-module#configuration

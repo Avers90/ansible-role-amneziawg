@@ -82,6 +82,17 @@ amneziawg_h4: 1234567894
         wgdashboard_peer_global_dns: "10.10.0.1"
 ```
 
+## Update mechanism
+
+- Set `amneziawg_update: true` to upgrade packages to the latest version from PPA
+- Default: `false` — packages are installed only if missing (`state: present`)
+- When `true`: `state: latest` — upgrades `amneziawg-dkms` + `amneziawg-tools` via apt, DKMS rebuilds the kernel module
+
+```bash
+# Update via Makefile
+make update-amneziawg HOST=<hostname>
+```
+
 ## Installation details
 
 - **Ubuntu**: adds PPA `ppa:amnezia/ppa`, installs `amneziawg` package
