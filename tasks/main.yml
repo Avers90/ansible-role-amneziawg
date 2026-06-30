@@ -20,6 +20,26 @@
     group: root
     mode: "0755"
 
+# Remove legacy one-line repo files from the apt_key / apt_repository era
+# (Debian: amnezia.list, amnezia-src.list; Ubuntu ppa: amnezia-ubuntu-ppa-*.list)
+# to avoid duplicate sources alongside the new deb822 amnezia.sources file.
+- name: amneziawg | Find legacy one-line repository files
+  ansible.builtin.find:
+    paths: /etc/apt/sources.list.d
+    patterns:
+      - "amnezia.list"
+      - "amnezia-src.list"
+      - "amnezia-ubuntu-ppa-*.list"
+  register: amneziawg_legacy_repos
+
+- name: amneziawg | Remove legacy one-line repository files
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ amneziawg_legacy_repos.files }}"
+  loop_control:
+    label: "{{ item.path }}"
+
 # deb822_repository replaces the deprecated apt_key / apt_repository modules
 # (removed in ansible-core 2.25). The PPA signing key is fetched as an
 # ASCII-armored keyring and referenced via signed_by.
