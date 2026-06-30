@@ -90,8 +90,11 @@ amneziawg_h4: 1234567894
 
 ## Installation details
 
-- **Ubuntu**: adds PPA `ppa:amnezia/ppa`, installs `amneziawg` package
-- **Debian**: adds Launchpad PPA key + focal repository, installs `amneziawg` package
+- Repository is added via `ansible.builtin.deb822_repository` (requires ansible-core 2.15+)
+- PPA signing key (`amneziawg_ppa_key_id`, default `57290828`) is fetched from
+  keyserver.ubuntu.com to `/etc/apt/keyrings/amnezia.asc` and referenced via `signed_by`
+- **Ubuntu**: suite = host release codename (`noble`/`jammy`/`focal`)
+- **Debian**: suite hardcoded to `focal` (no Launchpad builds for Debian), adds `deb-src` too
 - Private key is generated via `awg genkey` and saved to `/etc/wireguard/<interface>_privatekey` (mode 0600)
 - Config is written to `/etc/wireguard/<interface>.conf` (mode 0600)
 - Systemd unit: `awg-quick@<interface>`

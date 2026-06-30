@@ -28,6 +28,9 @@ amneziawg_force_config: false
 ## Set to true to upgrade: state: latest
 amneziawg_update: false
 
+## AmneziaWG Launchpad PPA signing key ID (fetched from keyserver.ubuntu.com)
+amneziawg_ppa_key_id: "57290828"
+
 ## AmneziaWG obfuscation parameters
 ## All parameters (except Jc/Jmin/Jmax) must match between server and client
 ## See: https://github.com/amnezia-vpn/amneziawg-linux-kernel-module#configuration

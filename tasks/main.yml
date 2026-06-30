@@ -4,43 +4,45 @@
     msg: "Distribution '{{ ansible_facts['distribution'] }}' is not supported. Supported: Debian, Ubuntu"
   when: ansible_facts['distribution'] not in ['Debian', 'Ubuntu']
 
-- name: amneziawg | Install prerequisites for PPA
+- name: amneziawg | Install prerequisites
   ansible.builtin.apt:
     name:
-      - software-properties-common
-      - python3-launchpadlib
       - gnupg2
       - "linux-headers-{{ ansible_facts['kernel'] }}"
     state: present
     update_cache: true
 
-- name: amneziawg | Add AmneziaWG GPG key (Debian)
-  ansible.builtin.apt_key:
-    keyserver: keyserver.ubuntu.com
-    id: "57290828"
-    state: present
-  when: ansible_facts['distribution'] == 'Debian'
+- name: amneziawg | Ensure apt keyrings directory exists
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
 
-- name: amneziawg | Add AmneziaWG PPA repository (Debian)
-  ansible.builtin.apt_repository:
-    repo: "deb https://ppa.launchpadcontent.net/amnezia/ppa/ubuntu focal main"
-    filename: amnezia
-    state: present
-  when: ansible_facts['distribution'] == 'Debian'
+# deb822_repository replaces the deprecated apt_key / apt_repository modules
+# (removed in ansible-core 2.25). The PPA signing key is fetched as an
+# ASCII-armored keyring and referenced via signed_by.
+- name: amneziawg | Download AmneziaWG PPA signing key
+  ansible.builtin.get_url:
+    url: "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x{{ amneziawg_ppa_key_id }}&options=mr"
+    dest: /etc/apt/keyrings/amnezia.asc
+    owner: root
+    group: root
+    mode: "0644"
 
-- name: amneziawg | Add AmneziaWG deb-src repository (Debian)
-  ansible.builtin.apt_repository:
-    repo: "deb-src https://ppa.launchpadcontent.net/amnezia/ppa/ubuntu focal main"
-    filename: amnezia-src
+- name: amneziawg | Add AmneziaWG PPA repository
+  ansible.builtin.deb822_repository:
+    name: amnezia
+    types: "{{ ['deb', 'deb-src'] if ansible_facts['distribution'] == 'Debian' else ['deb'] }}"
+    uris: "https://ppa.launchpadcontent.net/amnezia/ppa/ubuntu"
+    # Debian has no Launchpad builds — reuse the focal (Ubuntu 20.04) suite.
+    suites: "{{ 'focal' if ansible_facts['distribution'] == 'Debian' else ansible_facts['distribution_release'] }}"
+    components:
+      - main
+    signed_by: /etc/apt/keyrings/amnezia.asc
+    enabled: true
     state: present
-  when: ansible_facts['distribution'] == 'Debian'
-
-- name: amneziawg | Add AmneziaWG PPA repository (Ubuntu)
-  ansible.builtin.apt_repository:
-    repo: "ppa:amnezia/ppa"
-    state: present
-    update_cache: false
-  when: ansible_facts['distribution'] == 'Ubuntu'
 
 - name: amneziawg | Install AmneziaWG packages
   ansible.builtin.apt:
