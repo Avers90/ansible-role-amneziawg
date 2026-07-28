@@ -71,8 +71,8 @@
     name: amnezia
     types: "{{ ['deb', 'deb-src'] if ansible_facts['distribution'] == 'Debian' else ['deb'] }}"
     uris: "https://ppa.launchpadcontent.net/amnezia/ppa/ubuntu"
-    # Debian has no Launchpad builds — reuse the focal (Ubuntu 20.04) suite.
-    suites: "{{ 'focal' if ansible_facts['distribution'] == 'Debian' else ansible_facts['distribution_release'] }}"
+    # Suite resolution (incl. Debian->focal and unsupported-release remap) via amneziawg_ppa_suite.
+    suites: "{{ amneziawg_ppa_suite }}"
     components:
       - main
     signed_by: /etc/apt/keyrings/amnezia.asc

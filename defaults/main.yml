@@ -45,6 +45,16 @@ amneziawg_update: false
 ## AmneziaWG Launchpad PPA signing key ID (fetched from keyserver.ubuntu.com)
 amneziawg_ppa_key_id: "57290828"
 
+## Optional per-release suite remap for Ubuntu releases the Amnezia PPA does not
+## build for yet. Empty by default; add entries like {resolute: plucky} if needed.
+## Debian always uses focal (no Launchpad builds for Debian).
+amneziawg_ppa_suite_map: {}
+amneziawg_ppa_suite: >-
+  {{ 'focal'
+     if ansible_facts['distribution'] == 'Debian'
+     else amneziawg_ppa_suite_map[ansible_facts['distribution_release']]
+          | default(ansible_facts['distribution_release']) }}
+
 ## AmneziaWG obfuscation parameters
 ## All parameters (except Jc/Jmin/Jmax) must match between server and client
 ## See: https://github.com/amnezia-vpn/amneziawg-linux-kernel-module#configuration
