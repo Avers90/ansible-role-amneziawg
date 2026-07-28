@@ -4,11 +4,25 @@
     msg: "Distribution '{{ ansible_facts['distribution'] }}' is not supported. Supported: Debian, Ubuntu"
   when: ansible_facts['distribution'] not in ['Debian', 'Ubuntu']
 
+- name: amneziawg | Validate obfuscation parameters
+  ansible.builtin.assert:
+    that:
+      - "(amneziawg_s1 | int + 56) != (amneziawg_s2 | int)"
+      - "amneziawg_jmin | int < amneziawg_jmax | int"
+      - "amneziawg_jc | int >= 1 and amneziawg_jc | int <= 128"
+      - "amneziawg_jmax | int <= 1280"
+      - "[amneziawg_h1, amneziawg_h2, amneziawg_h3, amneziawg_h4] | map('int') | unique | length == 4"
+    fail_msg: >-
+      Invalid AmneziaWG obfuscation params
+      (require S1+56 != S2, Jmin < Jmax, 1 <= Jc <= 128, Jmax <= 1280, H1-H4 unique).
+    quiet: true
+
 - name: amneziawg | Install prerequisites
   ansible.builtin.apt:
     name:
       - gnupg2
-      - "linux-headers-{{ ansible_facts['kernel'] }}"
+      - "linux-headers-{{ ansible_facts['kernel'] }}"   # current kernel — immediate DKMS build
+      - "{{ amneziawg_headers_meta_package }}"          # meta — tracks future kernels
     state: present
     update_cache: true
 
@@ -69,6 +83,7 @@
     name:
       - amneziawg
     state: "{{ 'latest' if amneziawg_update | bool else 'present' }}"
+    # Required: refresh cache so the newly added Amnezia repo is visible.
     update_cache: true
 
 - name: amneziawg | Ensure config directory exists
@@ -84,19 +99,40 @@
     path: "{{ amneziawg_config_dir }}/{{ amneziawg_interface }}.conf"
   register: awg_config_file
 
-- name: amneziawg | Check if config has peers
-  ansible.builtin.shell: grep -c '^\[Peer\]' {{ amneziawg_config_dir }}/{{ amneziawg_interface }}.conf || echo 0
-  register: awg_peers_count
-  changed_when: false
+- name: amneziawg | Read existing config (if present)
+  ansible.builtin.slurp:
+    src: "{{ amneziawg_config_dir }}/{{ amneziawg_interface }}.conf"
+  register: awg_config_content
   when: awg_config_file.stat.exists
+  no_log: true
 
-- name: amneziawg | Set peers exist fact
+- name: amneziawg | Store decoded config content
   ansible.builtin.set_fact:
-    amneziawg_peers_exist: "{{ awg_config_file.stat.exists and (awg_peers_count.stdout | default('0') | int > 0) }}"
+    amneziawg_existing_config: "{{ (awg_config_content.content | b64decode) if awg_config_file.stat.exists else '' }}"
+  no_log: true
+
+- name: amneziawg | Set peer count and existence facts
+  ansible.builtin.set_fact:
+    amneziawg_peers_count: "{{ amneziawg_existing_config.split('[Peer]') | length - 1 }}"
+    amneziawg_peers_exist: "{{ (amneziawg_existing_config.split('[Peer]') | length - 1) > 0 }}"
 
 - name: amneziawg | Display peers status
   ansible.builtin.debug:
-    msg: "AmneziaWG config has {{ awg_peers_count.stdout | default('0') }} peer(s). Config will {{ 'NOT be modified' if (amneziawg_peers_exist and not amneziawg_force_config) else 'be deployed' }}."
+    msg: "AmneziaWG config has {{ amneziawg_peers_count }} peer(s). Config will {{ 'NOT be modified' if (amneziawg_peers_exist and not amneziawg_force_config) else 'be deployed' }}."
+
+- name: amneziawg | Warn if interface params drift but peers exist
+  ansible.builtin.debug:
+    msg: >-
+      WARNING: [Interface] params (port/obfuscation) differ from the deployed config,
+      but {{ amneziawg_peers_count }} peer(s) exist — changes were NOT applied.
+      To apply: set amneziawg_force_config=true (WARNING: wipes peers) or edit
+      {{ amneziawg_config_dir }}/{{ amneziawg_interface }}.conf manually.
+  when:
+    - amneziawg_peers_exist
+    - not amneziawg_force_config
+    - >-
+      ('ListenPort = ' ~ amneziawg_port) not in amneziawg_existing_config
+      or ('S1 = ' ~ amneziawg_s1) not in amneziawg_existing_config
 
 - name: amneziawg | Check if private key exists
   ansible.builtin.stat:
@@ -162,13 +198,21 @@
   ansible.builtin.debug:
     msg: "AmneziaWG public key: {{ public_key.stdout }}"
 
-- name: amneziawg | Enable IP forwarding
+- name: amneziawg | Enable IPv4 forwarding
   ansible.posix.sysctl:
     name: net.ipv4.ip_forward
     value: "1"
     state: present
     reload: true
   when: amneziawg_ip_forward | bool
+
+- name: amneziawg | Enable IPv6 forwarding
+  ansible.posix.sysctl:
+    name: net.ipv6.conf.all.forwarding
+    value: "1"
+    state: present
+    reload: true
+  when: amneziawg_ip_forward | bool and amneziawg_ipv6_forward | bool
 
 - name: amneziawg | Deploy AmneziaWG configuration
   ansible.builtin.template:
@@ -182,7 +226,7 @@
 
 - name: amneziawg | Skip config deployment (peers exist)
   ansible.builtin.debug:
-    msg: "Skipping config deployment - {{ awg_peers_count.stdout }} peer(s) found. Manage peers via WGDashboard."
+    msg: "Skipping config deployment - {{ amneziawg_peers_count }} peer(s) found. Manage peers via WGDashboard."
   when: amneziawg_peers_exist and not amneziawg_force_config
 
 - name: amneziawg | Enable and start AmneziaWG

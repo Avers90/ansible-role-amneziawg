@@ -17,8 +17,22 @@ amneziawg_private_key: ""
 ## DNS for clients (usually AdGuard Home on AWG IP)
 amneziawg_dns: "{{ amneziawg_address | ansible.utils.ipaddr('address') }}"
 
-## Enable IP forwarding
+## Enable IPv4 forwarding
 amneziawg_ip_forward: true
+
+## Enable IPv6 forwarding (default off — matches previous behavior)
+amneziawg_ipv6_forward: false
+
+## Linux headers meta-package — tracks future kernels so DKMS can rebuild
+## the module after a kernel upgrade. Auto-selected by distro/arch below;
+## override for non-generic kernels (e.g. linux-headers-virtual, -kvm, -cloud).
+amneziawg_deb_arch_map:
+  x86_64: amd64
+  aarch64: arm64
+amneziawg_headers_meta_package: >-
+  {{ 'linux-headers-generic'
+     if ansible_facts['distribution'] == 'Ubuntu'
+     else 'linux-headers-' ~ (amneziawg_deb_arch_map[ansible_facts['architecture']] | default('amd64')) }}
 
 ## Force config deployment even if peers exist
 amneziawg_force_config: false

@@ -29,7 +29,16 @@ amneziawg_private_key: ""
 ## DNS for clients
 amneziawg_dns: "{{ amneziawg_address | ansible.utils.ipaddr('address') }}"
 
-## Force config rewrite even if peers exist
+## Enable IPv4 / IPv6 forwarding
+amneziawg_ip_forward: true
+amneziawg_ipv6_forward: false
+
+## Linux headers meta-package (auto-selected by distro/arch — tracks future
+## kernels so DKMS rebuilds the module after a kernel upgrade). Override for
+## non-generic kernels, e.g. linux-headers-virtual / -kvm / -cloud.
+amneziawg_headers_meta_package: "linux-headers-generic"   # Ubuntu; Debian: linux-headers-<arch>
+
+## Force config rewrite even if peers exist (WARNING: wipes existing peers)
 amneziawg_force_config: false
 
 ## Obfuscation parameters (must match between server and client, except Jc/Jmin/Jmax)
@@ -111,6 +120,29 @@ amneziawg_h4: 1234567894
 | H1–H4 | unique, 5–2147483647 | random values |
 
 > Note: Jc, Jmin, Jmax may differ between server and client. All other parameters must match.
+
+These constraints are validated at the start of the role (`assert`): `S1+56 != S2`,
+`Jmin < Jmax`, `1 <= Jc <= 128`, `Jmax <= 1280`, and `H1-H4` unique. A misconfiguration
+fails the play early instead of producing a broken handshake.
+
+## Changing port / obfuscation on a host with existing peers
+
+The role never overwrites a config that already contains `[Peer]` sections (peers are
+managed by WGDashboard). Since `ListenPort` and the obfuscation values live in the same
+`[Interface]` block, changing `amneziawg_port` or the obfuscation params on a host with
+peers is **not applied silently**. The role prints a WARNING when it detects such a drift.
+
+To apply the new values, either:
+
+- set `amneziawg_force_config: true` (WARNING: this wipes all existing peers), or
+- edit `<config_dir>/<interface>.conf` manually and restart `awg-quick@<interface>`.
+
+## Kernel upgrades (DKMS)
+
+The role installs both the headers for the currently running kernel **and** a headers
+meta-package (`amneziawg_headers_meta_package`) so DKMS can rebuild the AmneziaWG module
+for kernels installed by later `apt upgrade` runs. Without the meta-package the module
+would fail to build after a kernel bump and the interface would not come up on reboot.
 
 ## NAT / Firewall
 
