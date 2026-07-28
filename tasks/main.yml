@@ -21,6 +21,7 @@
   ansible.builtin.apt:
     name:
       - gnupg2
+      - python3-debian                                  # required by deb822_repository
       - "linux-headers-{{ ansible_facts['kernel'] }}"   # current kernel — immediate DKMS build
       - "{{ amneziawg_headers_meta_package }}"          # meta — tracks future kernels
     state: present
