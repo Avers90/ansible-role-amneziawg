@@ -45,6 +45,12 @@ amneziawg_update: false
 ## AmneziaWG Launchpad PPA signing key ID (fetched from keyserver.ubuntu.com)
 amneziawg_ppa_key_id: "57290828"
 
+## Retry/timeout for the PPA key download (keyserver.ubuntu.com is often slow).
+## With force: false the key is fetched only once; these guard transient timeouts.
+amneziawg_ppa_key_timeout: 30
+amneziawg_ppa_key_retries: 5
+amneziawg_ppa_key_delay: 10
+
 ## Optional per-release suite remap for Ubuntu releases the Amnezia PPA does not
 ## build for yet. Empty by default; add entries like {resolute: plucky} if needed.
 ## Debian always uses focal (no Launchpad builds for Debian).

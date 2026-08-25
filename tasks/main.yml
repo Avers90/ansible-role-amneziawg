@@ -65,6 +65,14 @@
     owner: root
     group: root
     mode: "0644"
+    # keyserver.ubuntu.com is frequently overloaded — do not re-download when the
+    # key already exists, and retry on transient timeouts instead of failing.
+    force: false
+    timeout: "{{ amneziawg_ppa_key_timeout }}"
+  register: amneziawg_ppa_key_result
+  until: amneziawg_ppa_key_result is succeeded
+  retries: "{{ amneziawg_ppa_key_retries }}"
+  delay: "{{ amneziawg_ppa_key_delay }}"
 
 - name: amneziawg | Add AmneziaWG PPA repository
   ansible.builtin.deb822_repository:
