@@ -35,25 +35,30 @@
     group: root
     mode: "0755"
 
-# Remove legacy one-line repo files from the apt_key / apt_repository era
-# (Debian: amnezia.list, amnezia-src.list; Ubuntu ppa: amnezia-ubuntu-ppa-*.list)
-# to avoid duplicate sources alongside the new deb822 amnezia.sources file.
-- name: amneziawg | Find legacy one-line repository files
-  ansible.builtin.find:
-    paths: /etc/apt/sources.list.d
-    patterns:
-      - "amnezia.list"
-      - "amnezia-src.list"
-      - "amnezia-ubuntu-ppa-*.list"
+# Remove any legacy one-line .list from the apt_key / apt_repository /
+# add-apt-repository era (e.g. amnezia.list, amnezia-ubuntu-ppa-*.list,
+# ppa_amnezia_ppa_<suite>.list) to avoid a duplicate source alongside the new
+# deb822 amnezia.sources. A leftover .list has an empty Signed-By and clashes
+# with amnezia.sources' Signed-By, breaking `apt update`:
+#   "E:Conflicting values set for option Signed-By ... amnezia.asc != ".
+# Match by content (the PPA URL) rather than by filename so any naming survives.
+- name: amneziawg | Find legacy one-line repo files referencing the Amnezia PPA
+  ansible.builtin.shell: >-
+    set -o pipefail;
+    grep -rlE "ppa\.launchpad(content)?\.net/amnezia"
+    /etc/apt/sources.list.d/ 2>/dev/null
+    | grep -E '\.list$' || true
+  args:
+    executable: /bin/bash
   register: amneziawg_legacy_repos
+  changed_when: false
 
 - name: amneziawg | Remove legacy one-line repository files
   ansible.builtin.file:
-    path: "{{ item.path }}"
+    path: "{{ item }}"
     state: absent
-  loop: "{{ amneziawg_legacy_repos.files }}"
-  loop_control:
-    label: "{{ item.path }}"
+  loop: "{{ amneziawg_legacy_repos.stdout_lines }}"
+  when: item | length > 0
 
 # deb822_repository replaces the deprecated apt_key / apt_repository modules
 # (removed in ansible-core 2.25). The PPA signing key is fetched as an
