@@ -82,7 +82,13 @@
 - name: amneziawg | Install AmneziaWG packages
   ansible.builtin.apt:
     name:
-      - amneziawg
+      - amneziawg          # metapackage (pulls tools + any future deps)
+      # dkms must be listed explicitly: the metapackage depends on
+      # "amneziawg-dkms (>= 0.0.20200121-2) | amneziawg-modules", a loose >= pin
+      # that stays satisfied by an old dkms, so upgrading the metapackage alone
+      # never forces a new kernel module. Listing it here makes state=latest apply.
+      - amneziawg-dkms     # explicit: force kernel module to latest
+      - amneziawg-tools    # explicit: force userland tools to latest
     state: "{{ 'latest' if amneziawg_update | bool else 'present' }}"
     # Required: refresh cache so the newly added Amnezia repo is visible.
     update_cache: true
