@@ -41,17 +41,80 @@ amneziawg_headers_meta_package: "linux-headers-generic"   # Ubuntu; Debian: linu
 ## Force config rewrite even if peers exist (WARNING: wipes existing peers)
 amneziawg_force_config: false
 
+## Declared config version — "1.0" | "1.5" | "2.0" (see below)
+amneziawg_config_version: "1.0"
+
 ## Obfuscation parameters (must match between server and client, except Jc/Jmin/Jmax)
 amneziawg_jc: 4        # junk packets count (1–128)
 amneziawg_jmin: 8      # min junk packet size
 amneziawg_jmax: 80     # max junk packet size
-amneziawg_s1: 30       # init junk size (S1+56 ≠ S2)
-amneziawg_s2: 40       # response junk size
+amneziawg_s1: 30       # init junk size; 0 = off, else 12–150 (S1+56 ≠ S2)
+amneziawg_s2: 40       # response junk size; 0 = off, else 12–150
+amneziawg_s3: 0        # cookie reply junk size; 0 = off, else 12–64      (2.0)
+amneziawg_s4: 0        # transport junk size; 0 = off, else 12–64         (2.0)
 amneziawg_h1: 1234567891
 amneziawg_h2: 1234567892
 amneziawg_h3: 1234567893
 amneziawg_h4: 1234567894
+amneziawg_i1: ""       # CPS packets sent before the handshake            (1.5)
+amneziawg_i2: ""
+amneziawg_i3: ""
+amneziawg_i4: ""
+amneziawg_i5: ""
+
+## Interface MTU the kernel always assigns; informational, used to report the
+## client MTU ceiling when S4 is enabled
+amneziawg_iface_mtu: 1420
 ```
+
+## Config versions
+
+AmneziaWG has no version field in the config — the version is implied by which
+parameters are present. The role derives it the same way the official client
+does (`awgVersionOf()` in `amnezia-client/client/core/models/protocols/awgProtocolConfig.cpp`):
+
+| Version | Implied by | Client requirement |
+|---------|-----------|--------------------|
+| `1.0` | none of the below | any AmneziaWG client |
+| `1.5` | any of `I1`–`I5` set | AmneziaWG 1.5+ |
+| `2.0` | `S3 > 0`, or `S4 > 0`, or any of `H1`–`H4` given as a range `a-b` | AmneziaWG 2.0+ |
+
+`amneziawg_config_version` declares the expected version; the role fails when
+the parameters resolve to something else. This exists to protect a `group_vars`
+shared by several hosts — adding `S4` there makes every v1.0 host fail loudly
+instead of silently drifting.
+
+Parameters left at `0` / `""` are **not written to the config at all**, so a
+v1.0 host renders byte-for-byte the same file as before the v1.5/v2.0 support
+was added.
+
+### CPS syntax (`I1`–`I5`)
+
+Concatenated tags, no separators:
+
+| Tag | Meaning | Limit |
+|-----|---------|-------|
+| `<b 0xHEX>` | static bytes (protocol imitation) | even number of hex digits |
+| `<t>` | unix timestamp, 32-bit network order | — |
+| `<r N>` | cryptographically random bytes | 1 ≤ N ≤ 1000 |
+| `<rc N>` | random ASCII letters `[A-Za-z]` | 1 ≤ N ≤ 1000 |
+| `<rd N>` | random decimal digits `[0-9]` | 1 ≤ N ≤ 1000 |
+
+Do **not** reuse the signature shipped as the client default — it is present in
+every default Amnezia installation and is a fingerprint by itself. Generate a
+per-host one.
+
+### S4 and MTU
+
+`S4` prefixes **every data packet**, but the kernel module does not account for
+it: `device.c` always sets `dev->mtu = ETH_DATA_LEN - overhead = 1420`.
+Enabling `S4` therefore requires lowering the **client** MTU to at most
+`1420 - S4`. Amnezia's own reference configuration is `S1=S2=S3=S4=12` with
+MTU `1376` (`1280` on iOS/Android), which also survives PPPoE (1492) paths.
+
+With WGDashboard, set `wgdashboard_peer_mtu`. It applies to **newly created**
+peers only — existing peers keep the MTU stored in the WGDashboard database.
+Verify end to end from a client: `ping -s <MTU-28> -M do 8.8.8.8`.
 
 ## Usage
 
@@ -112,25 +175,44 @@ amneziawg_h4: 1234567894
 
 | Param | Constraint | Recommended |
 |-------|-----------|-------------|
-| Jc | 1 ≤ Jc ≤ 128 | 4–12 |
-| Jmin | < Jmax, < 1280 | 8 |
-| Jmax | > Jmin, ≤ 1280 | 80 |
-| S1 | ≤ 1132, S1+56 ≠ S2 | 15–150 |
-| S2 | ≤ 1188 | 15–150 |
-| H1–H4 | unique, 5–2147483647 | random values |
+| Jc | 1 ≤ Jc ≤ 128 | 3–12 |
+| Jmin | < Jmax, < 1280 | 8–10 |
+| Jmax | > Jmin, ≤ 1280 | 30–80 |
+| S1 | 0, or 12–150; S1+56 ≠ S2 | 12–150 |
+| S2 | 0, or 12–150 | 12–150 |
+| S3 | 0, or 12–64 | 12–64 |
+| S4 | 0, or 12–64 | 12 (raises per-packet overhead) |
+| H1–H4 | unique, 5–2147483647, or range `a-b` | random values, per host |
+| I1–I5 | CPS syntax, see above | one signature, per host |
 
 > Note: Jc, Jmin, Jmax may differ between server and client. All other parameters must match.
 
-These constraints are validated at the start of the role (`assert`): `S1+56 != S2`,
-`Jmin < Jmax`, `1 <= Jc <= 128`, `Jmax <= 1280`, and `H1-H4` unique. A misconfiguration
-fails the play early instead of producing a broken handshake.
+The upper bounds on `S1`–`S4` and the minimum of 12 are the amnezia-client
+conventions (`protocolConstants.h`), not kernel limits — the module itself only
+enforces a minimum of 12 when header protection is in use. Keeping the client
+bounds avoids producing configs the official GUI would refuse to import.
+
+Validated at the start of the role (`assert`): `S1+56 != S2`, `Jmin < Jmax`,
+`1 <= Jc <= 128`, `Jmax <= 1280`, `H1-H4` unique, `S1`–`S4` within the bounds
+above, `I1`–`I5` CPS syntax, and `amneziawg_config_version` matching the derived
+version. A misconfiguration fails the play early instead of producing a broken
+handshake.
+
+`H1`–`H4` **must be unique per host**. Reusing the same values across several
+servers means one leaked client config fingerprints all of them.
 
 ## Changing port / obfuscation on a host with existing peers
 
 The role never overwrites a config that already contains `[Peer]` sections (peers are
 managed by WGDashboard). Since `ListenPort` and the obfuscation values live in the same
 `[Interface]` block, changing `amneziawg_port` or the obfuscation params on a host with
-peers is **not applied silently**. The role prints a WARNING when it detects such a drift.
+peers is **not applied silently**. The role prints a WARNING listing exactly which
+values drifted.
+
+Drift detection compares `ListenPort`, `Jc`, `S1`, `S2`, `H1`, and — only when
+enabled — `S3`, `S4`, `I1`. Disabled values are skipped on purpose: `awg-quick save`
+rewrites the config through `awg showconf`, which emits `S3 = 0` even on a v1.0
+host, while the role's template omits the line entirely.
 
 To apply the new values, either:
 

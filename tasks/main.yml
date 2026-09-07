@@ -11,10 +11,77 @@
       - "amneziawg_jmin | int < amneziawg_jmax | int"
       - "amneziawg_jc | int >= 1 and amneziawg_jc | int <= 128"
       - "amneziawg_jmax | int <= 1280"
-      - "[amneziawg_h1, amneziawg_h2, amneziawg_h3, amneziawg_h4] | map('int') | unique | length == 4"
+      - >-
+        [amneziawg_h1, amneziawg_h2, amneziawg_h3, amneziawg_h4]
+        | map('string') | map('trim') | unique | length == 4
     fail_msg: >-
       Invalid AmneziaWG obfuscation params
       (require S1+56 != S2, Jmin < Jmax, 1 <= Jc <= 128, Jmax <= 1280, H1-H4 unique).
+    quiet: true
+
+# Upper bounds are the amnezia-client conventions (protocolConstants.h), not
+# kernel limits — the module only enforces a minimum of 12 when header
+# protection is in use. Keeping the client bounds avoids configs the official
+# GUI would refuse to import.
+- name: amneziawg | Validate junk packet sizes (S1-S4)
+  ansible.builtin.assert:
+    that:
+      - "item.value | int == 0 or item.value | int >= 12"
+      - "item.value | int <= item.max"
+    fail_msg: >-
+      Invalid AmneziaWG {{ item.name }}={{ item.value }} —
+      must be 0 (disabled) or between 12 and {{ item.max }}.
+    quiet: true
+  loop:
+    - { name: S1, value: "{{ amneziawg_s1 }}", max: 150 }
+    - { name: S2, value: "{{ amneziawg_s2 }}", max: 150 }
+    - { name: S3, value: "{{ amneziawg_s3 }}", max: 64 }
+    - { name: S4, value: "{{ amneziawg_s4 }}", max: 64 }
+  loop_control:
+    label: "{{ item.name }}={{ item.value }}"
+
+- name: amneziawg | Validate CPS syntax (I1-I5)
+  ansible.builtin.assert:
+    that:
+      - "lookup('vars', 'amneziawg_i' ~ item) is match(amneziawg_cps_regex)"
+    fail_msg: >-
+      Invalid CPS syntax in amneziawg_i{{ item }}.
+      Allowed tags: <b 0xHEX> (even number of hex digits), <t>,
+      <r N>, <rc N>, <rd N> with 1 <= N <= 1000. No separators between tags.
+    quiet: true
+  loop: "{{ range(1, 6) | list }}"
+  loop_control:
+    label: "I{{ item }}"
+  when: lookup('vars', 'amneziawg_i' ~ item) | length > 0
+  vars:
+    amneziawg_cps_regex: >-
+      ^(?:<b 0x(?:[0-9a-fA-F]{2})+>|<t>|<r[cd]? (?:[1-9][0-9]{0,2}|1000)>)+$
+
+# Mirrors awgVersionOf() in amnezia-client (awgProtocolConfig.cpp) so the role
+# labels a config exactly the way the official client would classify it.
+- name: amneziawg | Derive effective config version
+  ansible.builtin.set_fact:
+    amneziawg_version_effective: >-
+      {%- if amneziawg_s3 | int > 0 or amneziawg_s4 | int > 0
+             or ([amneziawg_h1, amneziawg_h2, amneziawg_h3, amneziawg_h4]
+                 | map('string') | join(',')) is search('-') -%}
+      2.0
+      {%- elif (amneziawg_i1 ~ amneziawg_i2 ~ amneziawg_i3
+                ~ amneziawg_i4 ~ amneziawg_i5) | length > 0 -%}
+      1.5
+      {%- else -%}
+      1.0
+      {%- endif -%}
+
+- name: amneziawg | Assert declared config version matches the parameters
+  ansible.builtin.assert:
+    that:
+      - "amneziawg_version_effective == amneziawg_config_version"
+    fail_msg: >-
+      Parameters resolve to AmneziaWG v{{ amneziawg_version_effective }},
+      but amneziawg_config_version is "{{ amneziawg_config_version }}".
+      Either bump the declared version for this host, or move the
+      v1.5/v2.0 parameters out of the shared group_vars into host_vars.
     quiet: true
 
 - name: amneziawg | Install prerequisites
@@ -140,19 +207,35 @@
   ansible.builtin.debug:
     msg: "AmneziaWG config has {{ amneziawg_peers_count }} peer(s). Config will {{ 'NOT be modified' if (amneziawg_peers_exist and not amneziawg_force_config) else 'be deployed' }}."
 
+# S3/S4/I1-I5 are only compared when enabled: `awg-quick save` rewrites the
+# config via `awg showconf`, which emits "S3 = 0" even on a v1.0 host, while the
+# role's template omits the line entirely. Comparing them unconditionally would
+# report drift on every legacy host.
+- name: amneziawg | Detect [Interface] parameter drift
+  ansible.builtin.set_fact:
+    amneziawg_config_drift: >-
+      {{ (['ListenPort = ' ~ amneziawg_port,
+            'Jc = ' ~ amneziawg_jc,
+            'S1 = ' ~ amneziawg_s1,
+            'S2 = ' ~ amneziawg_s2,
+            'H1 = ' ~ amneziawg_h1]
+          + (['S3 = ' ~ amneziawg_s3] if amneziawg_s3 | int > 0 else [])
+          + (['S4 = ' ~ amneziawg_s4] if amneziawg_s4 | int > 0 else [])
+          + (['I1 = ' ~ amneziawg_i1] if amneziawg_i1 | length > 0 else []))
+         | reject('in', amneziawg_existing_config) | list }}
+
 - name: amneziawg | Warn if interface params drift but peers exist
   ansible.builtin.debug:
     msg: >-
-      WARNING: [Interface] params (port/obfuscation) differ from the deployed config,
-      but {{ amneziawg_peers_count }} peer(s) exist — changes were NOT applied.
+      WARNING: [Interface] params differ from the deployed config, but
+      {{ amneziawg_peers_count }} peer(s) exist — changes were NOT applied.
+      Drifted: {{ amneziawg_config_drift | join('; ') }}.
       To apply: set amneziawg_force_config=true (WARNING: wipes peers) or edit
       {{ amneziawg_config_dir }}/{{ amneziawg_interface }}.conf manually.
   when:
     - amneziawg_peers_exist
     - not amneziawg_force_config
-    - >-
-      ('ListenPort = ' ~ amneziawg_port) not in amneziawg_existing_config
-      or ('S1 = ' ~ amneziawg_s1) not in amneziawg_existing_config
+    - amneziawg_config_drift | length > 0
 
 - name: amneziawg | Check if private key exists
   ansible.builtin.stat:
@@ -265,10 +348,25 @@
       Port: {{ amneziawg_port }}
       Public Key: {{ public_key.stdout }}
 
+      Config version: {{ amneziawg_version_effective }}
+
       Obfuscation params:
         Jc={{ amneziawg_jc }}, Jmin={{ amneziawg_jmin }}, Jmax={{ amneziawg_jmax }}
-        S1={{ amneziawg_s1 }}, S2={{ amneziawg_s2 }}
+        S1={{ amneziawg_s1 }}, S2={{ amneziawg_s2 }}, S3={{ amneziawg_s3 }}, S4={{ amneziawg_s4 }}
         H1={{ amneziawg_h1 }}, H2={{ amneziawg_h2 }}, H3={{ amneziawg_h3 }}, H4={{ amneziawg_h4 }}
+      {% for n in range(1, 6) if lookup('vars', 'amneziawg_i' ~ n) | length > 0 %}
+        I{{ n }}={{ lookup('vars', 'amneziawg_i' ~ n) }}
+      {% endfor %}
+      {% if amneziawg_s4 | int > 0 %}
+
+      MTU: S4={{ amneziawg_s4 }} is NOT accounted for in the interface MTU
+      (the kernel always sets {{ amneziawg_iface_mtu }}), so the client MTU must be
+      <= {{ amneziawg_iface_mtu | int - (amneziawg_s4 | int) }}. 1376 is the Amnezia reference value and also
+      survives PPPoE (1492) paths. With WGDashboard set wgdashboard_peer_mtu —
+      it applies to NEWLY created peers only, existing ones keep the MTU stored
+      in the WGDashboard database.
+      Verify end to end from a client: ping -s <MTU-28> -M do 8.8.8.8
+      {% endif %}
 
       NOTE: iptables/NAT rules are managed by ansible-role-firewall.
       Run firewall role to complete the setup.

@@ -61,6 +61,16 @@ amneziawg_ppa_suite: >-
      else amneziawg_ppa_suite_map[ansible_facts['distribution_release']]
           | default(ansible_facts['distribution_release']) }}
 
+## Declared AmneziaWG config version: "1.0" | "1.5" | "2.0"
+## The role derives the effective version from the obfuscation params below and
+## fails when it does not match this value. This guards a group_vars shared by
+## v1.0 hosts against an accidental v1.5/v2.0 parameter.
+## Derivation mirrors amnezia-client (awgProtocolConfig.cpp, awgVersionOf):
+##   2.0 — S3 > 0, or S4 > 0, or any of H1-H4 given as a range "a-b"
+##   1.5 — any of I1-I5 set
+##   1.0 — none of the above
+amneziawg_config_version: "1.0"
+
 ## AmneziaWG obfuscation parameters
 ## All parameters (except Jc/Jmin/Jmax) must match between server and client
 ## See: https://github.com/amnezia-vpn/amneziawg-linux-kernel-module#configuration
@@ -74,14 +84,50 @@ amneziawg_jmin: 8
 ## Jmax — max junk packet size in bytes (> Jmin, ≤ 1280); recommended: 80
 amneziawg_jmax: 80
 
-## S1 — init handshake junk size (≤ 1132, S1+56 ≠ S2); recommended: 15–150
+## S1 — init handshake junk size; 0 = off, else 12–150
+## Constraint: S1 + 56 ≠ S2
 amneziawg_s1: 30
 
-## S2 — response handshake junk size (≤ 1188); recommended: 15–150
+## S2 — response handshake junk size; 0 = off, else 12–150
 amneziawg_s2: 40
 
 ## H1–H4 — magic header values (must be unique, range: 5–2147483647)
+## AmneziaWG 2.0 also accepts a range "a-b"; ranges must not overlap.
 amneziawg_h1: 1234567891
 amneziawg_h2: 1234567892
 amneziawg_h3: 1234567893
 amneziawg_h4: 1234567894
+
+## --- AmneziaWG 1.5 / 2.0 parameters ---
+## Defaults keep the rendered config at v1.0: 0 / "" values are not emitted at
+## all, so an existing v1.0 host renders byte-for-byte the same config.
+## Upper bounds mirror amnezia-client (protocolConstants.h):
+##   junkPacketSizeMin = 12, initPacketJunkSizeMax = responsePacketJunkSizeMax = 150,
+##   cookieReplyPacketJunkSizeMax = 64
+
+## Interface MTU the kernel module always assigns, used only to report the
+## client MTU ceiling when S4 is enabled. device.c: ETH_DATA_LEN (1500) minus
+## MESSAGE_MINIMUM_LENGTH (32) + udphdr (8) + ipv6hdr (40) = 1420.
+amneziawg_iface_mtu: 1420
+
+## S3 — cookie reply junk size (2.0); 0 = off, else 12–64
+amneziawg_s3: 0
+
+## S4 — transport (data) packet junk size (2.0); 0 = off, else 12–32
+## WARNING: S4 is NOT accounted for in the interface MTU. The kernel module
+## always computes dev->mtu = 1500 - 80 = 1420 (device.c), so every data packet
+## grows by S4 bytes on the wire. Lower the client MTU by at least S4.
+## Amnezia's own reference default is S1=S2=S3=S4=12 with MTU 1376.
+amneziawg_s4: 0
+
+## I1–I5 — CPS (Custom Protocol Signature) packets sent before the handshake
+## (1.5); "" = off. Sent in order I1..I5, missing entries are skipped.
+## Tags: <b 0xHEX> static bytes | <t> unix timestamp | <r N> random bytes
+##       | <rc N> random ASCII letters | <rd N> random digits;  N ≤ 1000
+## Do NOT reuse the default signature shipped by the Amnezia client — it is
+## present in every default installation and is a fingerprint by itself.
+amneziawg_i1: ""
+amneziawg_i2: ""
+amneziawg_i3: ""
+amneziawg_i4: ""
+amneziawg_i5: ""

@@ -8,10 +8,22 @@ Jmin = {{ amneziawg_jmin }}
 Jmax = {{ amneziawg_jmax }}
 S1 = {{ amneziawg_s1 }}
 S2 = {{ amneziawg_s2 }}
+{% if amneziawg_s3 | int > 0 %}
+S3 = {{ amneziawg_s3 }}
+{% endif %}
+{% if amneziawg_s4 | int > 0 %}
+S4 = {{ amneziawg_s4 }}
+{% endif %}
 H1 = {{ amneziawg_h1 }}
 H2 = {{ amneziawg_h2 }}
 H3 = {{ amneziawg_h3 }}
 H4 = {{ amneziawg_h4 }}
+{% for n in range(1, 6) %}
+{% set _cps = lookup('vars', 'amneziawg_i' ~ n) %}
+{% if _cps | length > 0 %}
+I{{ n }} = {{ _cps }}
+{% endif %}
+{% endfor %}
 
 ## NAT/iptables rules are managed by ansible-role-firewall
 ## Do not add PostUp/PostDown here
