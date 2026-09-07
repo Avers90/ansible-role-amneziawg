@@ -130,6 +130,15 @@
 # deb822_repository replaces the deprecated apt_key / apt_repository modules
 # (removed in ansible-core 2.25). The PPA signing key is fetched as an
 # ASCII-armored keyring and referenced via signed_by.
+# Guarding the download with an explicit stat rather than relying on
+# `force: false` alone: in check mode get_url probes the URL even when it would
+# not download, and keyserver.ubuntu.com answers 405 to that probe, which fails
+# the whole play. Same end state, but `--check` stays usable.
+- name: amneziawg | Check whether the PPA signing key is already present
+  ansible.builtin.stat:
+    path: /etc/apt/keyrings/amnezia.asc
+  register: amneziawg_ppa_key_file
+
 - name: amneziawg | Download AmneziaWG PPA signing key
   ansible.builtin.get_url:
     url: "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x{{ amneziawg_ppa_key_id }}&options=mr"
@@ -145,6 +154,7 @@
   until: amneziawg_ppa_key_result is succeeded
   retries: "{{ amneziawg_ppa_key_retries }}"
   delay: "{{ amneziawg_ppa_key_delay }}"
+  when: not amneziawg_ppa_key_file.stat.exists
 
 - name: amneziawg | Add AmneziaWG PPA repository
   ansible.builtin.deb822_repository:
@@ -283,10 +293,15 @@
   when: amneziawg_private_key != ""
   no_log: true
 
+# check_mode: false — deriving the public key is a read-only operation, and
+# without it `shell` is skipped under --check, leaving public_key.stdout empty.
+# The next task would then report a diff that wipes the public key file, which
+# is both alarming and wrong.
 - name: amneziawg | Generate public key
   ansible.builtin.shell: echo "{{ amneziawg_private_key_actual }}" | awg pubkey
   register: public_key
   changed_when: false
+  check_mode: false
   no_log: true
 
 - name: amneziawg | Save public key to file
