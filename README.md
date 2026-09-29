@@ -180,7 +180,7 @@ Verify end to end from a client: `ping -s <MTU-28> -M do 8.8.8.8`.
 | Jmax | > Jmin, ≤ 1280 | 30–80 |
 | S1 | 0, or 12–150; S1+56 ≠ S2 | 12–150 |
 | S2 | 0, or 12–150 | 12–150 |
-| S3 | 0, or 12–64 | 12–64 |
+| S3 | 0, or 12–64; S3 ≠ S2+28 | 12–64 |
 | S4 | 0, or 12–64 | 12 (raises per-packet overhead) |
 | H1–H4 | unique, 5–2147483647, or range `a-b` | random values, per host |
 | I1–I5 | CPS syntax, see above | one signature, per host |
@@ -192,7 +192,11 @@ conventions (`protocolConstants.h`), not kernel limits — the module itself onl
 enforces a minimum of 12 when header protection is in use. Keeping the client
 bounds avoids producing configs the official GUI would refuse to import.
 
-Validated at the start of the role (`assert`): `S1+56 != S2`, `Jmin < Jmax`,
+`S1+56 ≠ S2` and `S3 ≠ S2+28` keep the padded init / response / cookie
+messages (148 / 92 / 64 bytes bare) from ending up the same size on the wire.
+
+Validated at the start of the role (`assert`): `S1+56 != S2`, `S3 != S2+28`
+(when S3 > 0), `Jmin < Jmax`,
 `1 <= Jc <= 128`, `Jmax <= 1280`, `H1-H4` unique, `S1`–`S4` within the bounds
 above, `I1`–`I5` CPS syntax, and `amneziawg_config_version` matching the derived
 version. A misconfiguration fails the play early instead of producing a broken

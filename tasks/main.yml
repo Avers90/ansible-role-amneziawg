@@ -8,6 +8,9 @@
   ansible.builtin.assert:
     that:
       - "(amneziawg_s1 | int + 56) != (amneziawg_s2 | int)"
+      # Response (92 B) + S2 must not equal cookie reply (64 B) + S3, otherwise
+      # the two message types have the same size on the wire.
+      - "amneziawg_s3 | int == 0 or (amneziawg_s2 | int + 28) != (amneziawg_s3 | int)"
       - "amneziawg_jmin | int < amneziawg_jmax | int"
       - "amneziawg_jc | int >= 1 and amneziawg_jc | int <= 128"
       - "amneziawg_jmax | int <= 1280"
@@ -16,7 +19,7 @@
         | map('string') | map('trim') | unique | length == 4
     fail_msg: >-
       Invalid AmneziaWG obfuscation params
-      (require S1+56 != S2, Jmin < Jmax, 1 <= Jc <= 128, Jmax <= 1280, H1-H4 unique).
+      (require S1+56 != S2, S3 != S2+28 when S3 > 0, Jmin < Jmax, 1 <= Jc <= 128, Jmax <= 1280, H1-H4 unique).
     quiet: true
 
 # Upper bounds are the amnezia-client conventions (protocolConstants.h), not

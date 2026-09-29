@@ -111,6 +111,7 @@ amneziawg_h4: 1234567894
 amneziawg_iface_mtu: 1420
 
 ## S3 — cookie reply junk size (2.0); 0 = off, else 12–64
+## Constraint: S3 ≠ S2 + 28 (cookie reply would match the response size)
 amneziawg_s3: 0
 
 ## S4 — transport (data) packet junk size (2.0); 0 = off, else 12–32
