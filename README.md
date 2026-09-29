@@ -116,6 +116,21 @@ With WGDashboard, set `wgdashboard_peer_mtu`. It applies to **newly created**
 peers only — existing peers keep the MTU stored in the WGDashboard database.
 Verify end to end from a client: `ping -s <MTU-28> -M do 8.8.8.8`.
 
+### Mobile networks: companion firewall settings
+
+This role does not manage iptables. For mobile carriers, pair it with
+`ansible-role-firewall`:
+
+- `firewall_wireguard_mss: 1240` — TCP MSS clamp against PMTUD blackholes
+  (tunnel up, large pages hang). Server-side only, no client changes.
+- `firewall_wireguard_extra_ports_udp: [443]` — extra entry port redirected to
+  `amneziawg_port`, for carriers that drop non-standard UDP. Issued configs keep
+  the real port; a client opts in by editing the `Endpoint` port.
+
+Field data on which parameters pass which carriers:
+[bivlked/amneziawg-installer](https://github.com/bivlked/amneziawg-installer)
+(`ADVANCED.md`, sections on mobile networks and MTU).
+
 ## Usage
 
 ### Standalone
